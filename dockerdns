@@ -230,10 +230,8 @@ class DockerMonitor(object):
 
   def _check_proxy_address(self, rec):
     env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
-    virtual_host = env_vars.get('VIRTUAL_HOST', None)
-    dont_resolve_to_proxy_ip = env_vars.get('DONT_RESOLVE_TO_PROXY_IP', None)
-    #if virtual_host != None:
-    if virtual_host != None and not dont_resolve_to_proxy_ip:
+    resolve_to_proxy_ip = env_vars.get('RESOLVE_TO_PROXY_IP', None)
+    if resolve_to_proxy_ip != None:
       proxy_rec = self._docker.inspect_container(self._proxy)
       rec['NetworkSettings']['IPAddress'] = proxy_rec['NetworkSettings']['IPAddress']
 
