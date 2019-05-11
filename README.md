@@ -1,45 +1,54 @@
-:bangbang::-1: **Moved to Gitlab... (jamgo/docker-dns)**
+# docker-dns
 
-docker-dns
-----------
+Automatic container DNS for docker in a single Python file.
 
-Automatic container DNS for [Docker][docker] in a single Python file.
+Note that docker-dns-rest expands on this, adding a REST API to add and remove domain names dynamically, allowing multiple domain names to be associated with containers, either by name or container ID.  It also includes support for wildcards.
 
-Note that [docker-dns-rest][dns-rest] expands on this, adding a REST API to add and remove domain names dynamically, allowing multiple domain names to be associated with containers, either by name or container ID.  It also includes support for wildcards.
+http://github.com/docker/docker
+http://github.com/phensley/docker-dns-rest
 
-[docker]: http://github.com/docker/docker "Docker"
-[dns-rest]: http://github.com/phensley/docker-dns-rest "docker-dns-rest"
+This container has been modified to allow some extra features.
 
-Usage
------
+# usage
 
 Run some containers:
 
+```
     % docker run -d --name foo ubuntu bash -c "sleep 600"
+```
 
 Start up dockerdns:
 
+```
     % docker run --name dns -v /var/run/docker.sock:/docker.sock jamgocoop/docker-dns \
         --domain example.com
+```
 
 Start more containers:
 
+```
     % docker run -d --name bar ubuntu bash -c "sleep 600"
+```
 
 Check dockerdns logs:
 
+```
     % docker logs dns
     2014-10-08T20:45:37.349161 [dockerdns] table.add dns.example.com -> 172.17.0.3
     2014-10-08T20:45:37.351574 [dockerdns] table.add foo.example.com -> 172.17.0.2
     2014-10-08T20:45:37.351574 [dockerdns] table.add bar.example.com -> 172.17.0.4
+```
 
 Start up dockerdns with multiple domains:
 
+```
     % docker run --name dns -v /var/run/docker.sock:/docker.sock jamgocoop/docker-dns \
         --domain example.com alias.com
+```
 
 Check dockerdns logs:
 
+```
     % docker logs dns
     2014-10-08T20:45:37.349161 [dockerdns] table.add dns.example.com -> 172.17.0.3
     2014-10-08T20:45:37.349161 [dockerdns] table.add dns.alias.com -> 172.17.0.3
@@ -47,9 +56,11 @@ Check dockerdns logs:
     2014-10-08T20:45:37.351574 [dockerdns] table.add foo.alias.com -> 172.17.0.2
     2014-10-08T20:45:37.351574 [dockerdns] table.add bar.example.com -> 172.17.0.4
     2014-10-08T20:45:37.351574 [dockerdns] table.add bar.alias.com -> 172.17.0.4
+```
 
 Query for the containers by hostname:
 
+```
     % host foo.example.com 172.17.0.3
     Using domain server:
     Name: 172.17.0.3
@@ -58,9 +69,11 @@ Query for the containers by hostname:
 
     foo.example.com has address 172.17.0.2
     foo.example.com has address 172.17.0.2
+```
 
 Use dns container as a resolver inside a container:
 
+```
     % docker run -it --dns $(docker inspect -f '{{.NetworkSettings.IPAddress}}' dns) \
         --dns-search example.com ubuntu bash
 
@@ -72,27 +85,35 @@ Use dns container as a resolver inside a container:
     PING foo.example.com (172.17.0.2) 56(84) bytes of data.
     64 bytes from 172.17.0.2: icmp_seq=1 ttl=64 time=0.112 ms
     64 bytes from 172.17.0.2: icmp_seq=2 ttl=64 time=0.112 ms
+```
 
 Names not rooted in `example.com` will be resolved recursively using Google's resolver `8.8.8.8` by default:
 
+```
     root@95840788bf08:/# ping github.com
     PING github.com (192.30.252.128) 56(84) bytes of data.
     64 bytes from 192.30.252.128: icmp_seq=1 ttl=61 time=21.3 ms
+```
 
 To disable recursive resolution, use the `--no-recursion` flag:
 
+```
     % docker run --name dns -v /var/run/docker.sock:/docker.sock jamgocoop/docker-dns \
         --domain example.com --no-recursion
+```
 
 Now names not rooted in `example.com` will fail to resolve:
 
+```
     % docker run -it --dns $(docker inspect -f '{{.NetworkSettings.IPAddress}}' dns) \
         --dns-search example.com ubuntu bash
     root@4d15342387b0:/# ping github.com
     ping: unknown host github.com
+```
 
 To add static host name, use the `--record` option:
 
+```
     % docker run --name dns -v /var/run/docker.sock:/docker.sock jamgocoop/docker-dns \
         --domain example.com --record test:172.17.0.100
 
@@ -102,9 +123,11 @@ To add static host name, use the `--record` option:
 
 	Name:	test.example.com
 	Address: 172.17.0.100
+```
 
 To add external static host name, use the `--record-external` option:
 
+```
     % docker run --name dns -v /var/run/docker.sock:/docker.sock jamgocoop/docker-dns \
         --domain example.com --record-external www.montoto.org:10.0.0.5
 
@@ -122,40 +145,64 @@ To add external static host name, use the `--record-external` option:
 	Non-authoritative answer:
 	Name:	www.montoto.org
 	Address: 212.89.28.201
+```
+# New features
 
-Special use cases
------
+Below explained the new features implemented modifying the original script
 
-Couple of uses cases where added, to work in conjuntion with [nginx-proxy]: https://hub.docker.com/r/jwilder/nginx-proxy/ container
+## "--proxy" parameter
 
-Use case A: HTTP container
+This parameter specifies the name of the container running nginx-proxy (https://hub.docker.com/r/jwilder/nginx-proxy/) container.
+
+It will be used in conjuntion with "--resolve-to-proxy-ip-env" parameter, explained later on
+
+## "--resolve-to-proxy-ip-env" parameter
+
+Specifies the docker container environment variable to be evaluated on each running container.
+
+In case of detect it, the DNS will assign to the container the IP of the container with the name of the variable "--proxy"
+
+Let's see couple of examples:
+
+### HTTP container
 
 We want the container to be accessible internally and externally through the proxy, so we can, for instance, use valid SSL certificates.
 
-We should initialize the container with the "--proxy" flag pointing to  the container running nginx-proxy image:
+We should initialize the container with the "--proxy" flag pointing to  the container running nginx-proxy image and "--resolve-to-proxy-ip-env" indicating which container environment variable will be evaluated:
 
+```
 docker run \
  --name dns \
  -p 53:53/udp \
- -d \
  -v /var/run/docker.sock:/docker.sock \
- -d keducoop/dns:v1 \
+ -d keducoop/dns:v2 \
  --domain example.com \
- --proxy nginx-proxy
+ --proxy nginx-proxy \
+ --resolve-to-proxy-ip-env RESOLVE_TO_PROXY_IP
+```
 
-From now on the containers containing the environment varialbe "VIRTUAL_HOST" will resolve to the IP of the container running the nging-proxy image.
+Now we start a container with "RESOLVE_TO_PROXY_IP" environment variable:
 
-Use case B: Gitlab container
+```
+docker run \
+ --name httpd \
+ -e RESOLVE_TO_PROXY_IP=true \
+ -d httpd:2.4
+```
+
+In this example DNS container will resolve "httpd.example.com" to the same IP of the container "nginx-proxy"
+
+### Gitlab
 
 The gitlab container is quite special, since it's running more than one service. We would like to expose the HTTPS, but we need to access it through SSH as well.
 
-We need to start the container with the "DONT_RESOLVE_TO_PROXY_IP" environment variable set, it don'r really matter the actual value.
+We need to start the container **without** the **"RESOLVE_TO_PROXY_IP"** environment variable.
 
 Example:
 
+```
 docker run --name gitlab \
  --hostname gitlab.example.com \
- -e DONT_RESOLVE_TO_PROXY_IP=true \
  -e VIRTUAL_HOST=gitlab.example.com \
  -e VIRTUAL_PORT=443 \
  -e VIRTUAL_PROTO=https \
@@ -167,10 +214,64 @@ docker run --name gitlab \
  -v /srv/data/computer/docker/gitlab/log:/var/log/gitlab \
  -v /srv/data/computer/docker/nginx-letsencrypt/certs:/etc/gitlab/ssl:ro \
  -d gitlab/gitlab-ce:latest
+```
 
-License
--------
+## "--additional-dns-names-env" parameter
 
+**CAUTION** this is definetely not a good solution, because it can overwrite already existing DNS entries
+
+It's a list of comma separated values of DNS names (not FQDNs), which will be added to domains to return the FQDN.
+
+This feature was needed by koha docker container, which exposes two virtualhosts, so there was two approaches:
+
+* Configure (supported by koha) two different ports for each virtualhost. At the time of writing this documentation this is not supported (https://hub.docker.com/r/jwilder/nginx-proxy/). 
+* Use just one port, but then the same container should have a DNS entry for each virtualhost. This is the implemented solution
+
+### Example of multiple DNS names for a single container
+
+First start the docker dns container with the "--additional-dns-names-env" parameter
+
+```
+docker run \
+ --name dns \
+ -p 53:53/udp \
+ -v /var/run/docker.sock:/docker.sock \
+ -d keducoop/dns:v2 \
+ --domain example.com,another.example.com \
+ --proxy nginx-proxy \
+ --resolve-to-proxy-ip-env RESOLVE_TO_PROXY_IP \
+ --additional-dns-names-env ADDITIONAL_DNS_NAMES
+```
+
+Now we start a container with "ADDITIONAL_DNS_NAMES" environment variable:
+
+```
+docker run \
+ --name httpd \
+ -e ADDITIONAL_DNS_NAMES=namea,nameb.admin \
+ -d httpd:2.4
+```
+
+In this example DNS container will resolve all of following FQDNs to the IP of container "httpd":
+
+(Implemented by '--domain' parameter)
+* httpd.example.com
+* httpd.another.example.com
+
+(Implemented by '--additional-dns-names-env' parameter)
+
+* namea.example.com
+* namea.another.example.com
+* nameb.admin.example.com
+* nameb.admin.another.example.com
+
+## Credits
+
+The original code was also modified by docker-dns (https://gitlab.com/jamgo/docker-dns)
+
+## License
+
+```
     Copyright (c) 2014 Patrick Hensley
 
     Licensed under the Apache License, Version 2.0 (the "License");
@@ -184,4 +285,5 @@ License
     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
     See the License for the specific language governing permissions and
     limitations under the License.
+```
 

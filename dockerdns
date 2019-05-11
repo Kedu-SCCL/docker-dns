@@ -38,7 +38,7 @@ from gevent.resolver_ares import Resolver
 PROCESS = 'dockerdns'
 DOCKER_SOCK = 'unix:///docker.sock'
 DNS_BINDADDR = '0.0.0.0:53'
-DNS_RESOLVER = ['8.8.8.8']
+DNS_RESOLVER = ['9.9.9.9']
 DNS_RESOLVER_TIMEOUT = 3.0
 RE_VALIDNAME = re.compile('[^\w\d.-]')
 QUIET = 0
@@ -116,7 +116,8 @@ class NameTable(object):
 class DockerMonitor(object):
   'Reads events from Docker and updates the name table'
 
-  def __init__(self, client, table, domains, proxy, resolve_to_proxy_ip_env):
+  def __init__(self, client, table, domains, proxy, resolve_to_proxy_ip_env,
+               additional_dns_names):
     self._docker = client
     self._table = table
     self._domains = domains
@@ -125,6 +126,7 @@ class DockerMonitor(object):
     # NEW: persist proxy container IPs across restarts in case that we
     # need to update IPs of containers containing '--resolve-to-proxy-ip-env'
     self._proxy_ip = None
+    self._additional_dns_names = additional_dns_names
 
   def run(self):
     # start the event poller, but don't read from the stream yet
@@ -203,36 +205,49 @@ class DockerMonitor(object):
     # we should loop over all running containers with '--resolve-to-proxy-ip-env'
     # ENV variable and update its IP
     if name == self._proxy:
-        fqdn = self._proxy + '.' + self._domains[0] + '.'
-        proxy_old_ip = self._table.get(fqdn)
-        proxy_new_ip = ip_address
-        if self._proxy_ip is not None:
-            if self._proxy_ip != proxy_new_ip and proxy_new_ip is not None:
-                self._update_ip_of_containers_with_resolve_to_proxy_ip(proxy_new_ip)
-                self._proxy_ip = proxy_new_ip
-        else:
-            if proxy_new_ip is not None:
-                self._proxy_ip = proxy_new_ip
+      fqdn = self._proxy + '.' + self._domains[0] + '.'
+      proxy_old_ip = self._table.get(fqdn)
+      proxy_new_ip = ip_address
+      if self._proxy_ip is not None:
+        if self._proxy_ip != proxy_new_ip and proxy_new_ip is not None:
+          self._update_ip_of_containers_with_resolve_to_proxy_ip(proxy_new_ip)
+          self._proxy_ip = proxy_new_ip
+      else:
+        if proxy_new_ip is not None:
+          self._proxy_ip = proxy_new_ip
+
+    # NEW: we will add supplied additional dns names here
+    self._add_additional_dns_names(cid, ip_address)
 
     if ip_address is not None:
       return [ Container(id_, name, state, ip_address) for name in self._get_names(name, labels) ]
     else:
       return []
 
-  # NEW
+  def _add_additional_dns_names(self, container_id, container_ip):
+    # If container has --additional_dns_names_env adds those DNS names
+    rec = self._docker.inspect_container(container_id)
+    env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
+    l_additional_dns_names = env_vars.get(self._additional_dns_names, None)
+    if l_additional_dns_names != None:
+      for name in l_additional_dns_names.split(','):
+        for domain in self._domains:
+          fqdn = '.'.join((name, domain))
+          self._table.add(fqdn, container_ip)
+
   def _update_ip_of_containers_with_resolve_to_proxy_ip(self, proxy_ip):
     # Updates all IPs of containers containing '--resolve-to-proxy-ip-env'
     for container in self._docker.containers():
-      # TODO: maybe it breaks everythin
+      # TODO: maybe it breaks everything
       rec = self._docker.inspect_container(container['Id'])
       name = get(rec, 'Name')
       name = name.strip('/')
       env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
       resolve_to_proxy_ip = env_vars.get(self._resolve_to_proxy_ip_env, None)
       if resolve_to_proxy_ip != None:
-          for domain in self._domains:
-              fqdn = '.'.join((name, domain))
-              self._table.add(fqdn, proxy_ip)
+        for domain in self._domains:
+          fqdn = '.'.join((name, domain))
+          self._table.add(fqdn, proxy_ip)
 
   def _check_proxy_address(self, rec):
     env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
@@ -334,6 +349,9 @@ def parse_args():
     help='Docker container name running a reverse proxy')
   parser.add_argument('--resolve-to-proxy-ip-env', default=None,
     help='Environment variable inside docker containers to be evaluated')
+  # Added
+  parser.add_argument('--additional-dns-names-env', default=None,
+    help='Docker container environment variable indicating additional DNS names')
   parser.add_argument('-q', '--quiet', action='store_const', const=1,
     help='Quiet mode')
   parser.add_argument('-r', '--record', nargs="*", default=[],
@@ -361,7 +379,8 @@ def main():
        table.add(k, v)
   monitor = DockerMonitor(docker.Client(args.docker, version='auto'), table,
                           args.domain, args.proxy,
-                          args.resolve_to_proxy_ip_env)
+                          args.resolve_to_proxy_ip_env,
+                          args.additional_dns_names_env)
   dns = DnsServer(args.dns_bind, table, resolver)
   gevent.signal(signal.SIGINT, stop, dns)
   dns.start()
