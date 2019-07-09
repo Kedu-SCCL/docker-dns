@@ -186,10 +186,6 @@ class DockerMonitor(object):
     # get full details on this container from docker
     rec = self._docker.inspect_container(cid)
 
-    # is domain managed by a proxy?
-    if (self._proxy != None):
-      self._check_proxy_address(rec)
-
     # ensure name is valid, and append our domain
     name = get(rec, 'Name')
     if not name:
@@ -199,7 +195,9 @@ class DockerMonitor(object):
     id_ = get(rec, 'Id')
     labels = get(rec, 'Config', 'Labels')
     state = get(rec, 'State', 'Running')
-    ip_address = get(rec, 'NetworkSettings', 'IPAddress')
+    # ISSUE: with several networks below statement fails
+    #ip_address = get(rec, 'NetworkSettings', 'IPAddress')
+    ip_address = self._get_addrs(rec)
 
     # BUG: if "--proxy" container changes IP (because it was stopped, etc.)
     # we should loop over all running containers with '--resolve-to-proxy-ip-env'
@@ -210,11 +208,14 @@ class DockerMonitor(object):
       proxy_new_ip = ip_address
       if self._proxy_ip is not None:
         if self._proxy_ip != proxy_new_ip and proxy_new_ip is not None:
+          log('Proxy changed IP. Loop over containers...')
           self._update_ip_of_containers_with_resolve_to_proxy_ip(proxy_new_ip)
           self._proxy_ip = proxy_new_ip
       else:
         if proxy_new_ip is not None:
           self._proxy_ip = proxy_new_ip
+          log('Discovered proxy IP. Loop over containers...')
+          self._update_ip_of_containers_with_resolve_to_proxy_ip(proxy_new_ip)
 
     # NEW: we will add supplied additional dns names here
     self._add_additional_dns_names(cid, ip_address)
@@ -224,6 +225,7 @@ class DockerMonitor(object):
     else:
       return []
 
+  '''
   def _add_additional_dns_names(self, container_id, container_ip):
     # If container has --additional_dns_names_env adds those DNS names
     rec = self._docker.inspect_container(container_id)
@@ -234,6 +236,10 @@ class DockerMonitor(object):
         for domain in self._domains:
           fqdn = '.'.join((name, domain))
           self._table.add(fqdn, container_ip)
+  '''
+  def _add_additional_dns_names(self, container_id, container_ip):
+    # If container has --additional_dns_names_env adds those DNS names
+    pass
 
   def _update_ip_of_containers_with_resolve_to_proxy_ip(self, proxy_ip):
     # Updates all IPs of containers containing '--resolve-to-proxy-ip-env'
@@ -242,19 +248,24 @@ class DockerMonitor(object):
       rec = self._docker.inspect_container(container['Id'])
       name = get(rec, 'Name')
       name = name.strip('/')
-      env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
-      resolve_to_proxy_ip = env_vars.get(self._resolve_to_proxy_ip_env, None)
-      if resolve_to_proxy_ip != None:
-        for domain in self._domains:
-          fqdn = '.'.join((name, domain))
-          self._table.add(fqdn, proxy_ip)
+      for ele in [i.split('=', 1) for i in get(rec, 'Config', 'Env')]:
+        if ele[0] == self._resolve_to_proxy_ip_env:
+          log('Container %s has resolve_to_proxy_ip_env', name)
+          for domain in self._domains:
+            fqdn = '.'.join((name, domain))
+            self._table.add(fqdn, proxy_ip)
 
-  def _check_proxy_address(self, rec):
-    env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
-    resolve_to_proxy_ip = env_vars.get(self._resolve_to_proxy_ip_env, None)
-    if resolve_to_proxy_ip != None:
-      proxy_rec = self._docker.inspect_container(self._proxy)
-      rec['NetworkSettings']['IPAddress'] = proxy_rec['NetworkSettings']['IPAddress']
+  # Adapted from https://github.com/phensley/docker-dns/blob/master/dockerdns
+  def _get_addrs(self, rec):
+    networks = get(rec, 'NetworkSettings', 'Networks')
+    #return [ value['IPAddress'] for value in networks.values() ]
+    proxy_network = 'network-proxy'
+    try:
+        return(next(i['IPAddress'] for i in networks.values() if i['IPAddress'] == proxy_network))
+    except StopIteration:
+      # TODO: see if returning more than one value is an issue.....
+      #return [ value['IPAddress'] for value in networks.values() ]
+      return networks.values()[0]['IPAddress']
 
 class DnsServer(DatagramServer):
   '''
