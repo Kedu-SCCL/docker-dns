@@ -3,21 +3,35 @@
 - [Introduction](#introduction)
 - [Usage](#usage)
 - [New features](#new-features)
-  - ["--proxy" parameter](#proxy-parameter)
-  - ["--resolve-to-proxy-ip-env" parameter](#resolve-to-proxy-ip-env-parameter)
+  - [--proxy parameter](#proxy-parameter)
+  - [--resolve-to-proxy-ip-env parameter](#resolve-to-proxy-ip-env-parameter)
     - [HTTP container](#http-container)
     - [Gitlab](#gitlab)
-  - ["--additional-dns-names-env" parameter](#additional-dns-names-env-parameter)
+  - [--additional-dns-names-env parameter](#additional-dns-names-env-parameter)
     - [Example of multiple DNS names for a single container](#example-multiple-dns)
-  - ["--proxy-network" parameter](#proxy-network-parameter)
-  - [Credits](#credits)
-  - [License](#license)
+  - [--proxy-network parameter](#proxy-network-parameter)
+- [Credits](#credits)
+- [License](#license)
 
 # Introduction
 
-Docker container that resolves container FQDN to IPs.
+Docker container that resolves container FQDN to IPs. Intended to be used with a reverse proxy, such as nginx.
 
 # Usage
+
+Start the docker container:
+
+```
+docker run \
+ --name dns \
+ -p 53:53/udp \
+ -v /var/run/docker.sock:/docker.sock:ro \
+ -d kedu/dns \
+ --domain example.com \
+ --proxy nginx \
+ --resolve-to-proxy-ip-env RESOLVE_TO_PROXY_IP \
+ --proxy-network network-proxy
+```
 
 Run some containers:
 
@@ -158,13 +172,13 @@ To add external static host name, use the `--record-external` option:
 
 Below explained the new features implemented modifying the original script
 
-## "--proxy" parameter
+## --proxy parameter
 
 This parameter specifies the name of the container running nginx-proxy (https://hub.docker.com/r/jwilder/nginx-proxy/) container.
 
 It will be used in conjuntion with "--resolve-to-proxy-ip-env" parameter, explained later on
 
-## "--resolve-to-proxy-ip-env" parameter
+## --resolve-to-proxy-ip-env parameter
 
 Specifies the docker container environment variable to be evaluated on each running container.
 
@@ -184,9 +198,10 @@ docker run \
  -p 53:53/udp \
  -v /var/run/docker.sock:/docker.sock \
  -d keducoop/dns:v2 \
- --domain example.com \
+ --domain example.com,another.example.com \
  --proxy nginx-proxy \
- --resolve-to-proxy-ip-env RESOLVE_TO_PROXY_IP
+ --resolve-to-proxy-ip-env RESOLVE_TO_PROXY_IP \
+ --additional-dns-names-env ADDITIONAL_DNS_NAMES
 ```
 
 Now we start a container with "RESOLVE_TO_PROXY_IP" environment variable:
@@ -224,7 +239,7 @@ docker run --name gitlab \
  -d gitlab/gitlab-ce:latest
 ```
 
-## "--additional-dns-names-env" parameter
+## --additional-dns-names-env parameter
 
 **CAUTION** this is definetely not a good solution, because it can overwrite already existing DNS entries
 
@@ -273,7 +288,7 @@ In this example DNS container will resolve all of following FQDNs to the IP of c
 * nameb.admin.example.com
 * nameb.admin.another.example.com
 
-## "--proxy-network" parameter
+## --proxy-network parameter
 
 Docker network which proxy container is attached to.
 
@@ -285,11 +300,11 @@ Example:
  --proxy-network network-proxy
 ```
 
-## Credits
+# Credits
 
 Taken from [docker-dns](https://github.com/phensley/docker-dns/blob/master/dockerdns) and modified to implement some features.
 
-## License
+# License
 
 ```
     Copyright (c) 2014 Patrick Hensley
