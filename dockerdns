@@ -225,21 +225,15 @@ class DockerMonitor(object):
     else:
       return []
 
-  '''
   def _add_additional_dns_names(self, container_id, container_ip):
     # If container has --additional_dns_names_env adds those DNS names
     rec = self._docker.inspect_container(container_id)
-    env_vars = dict(token.split('=', 1) for token in get(rec, 'Config', 'Env'))
-    l_additional_dns_names = env_vars.get(self._additional_dns_names, None)
-    if l_additional_dns_names != None:
-      for name in l_additional_dns_names.split(','):
-        for domain in self._domains:
-          fqdn = '.'.join((name, domain))
-          self._table.add(fqdn, container_ip)
-  '''
-  def _add_additional_dns_names(self, container_id, container_ip):
-    # If container has --additional_dns_names_env adds those DNS names
-    pass
+    for ele in [i.split('=', 1) for i in get(rec, 'Config', 'Env')]:
+      if ele[0] == self._additional_dns_names:
+        for name in ele[1].split(','):
+          for domain in self._domains:
+            fqdn = '.'.join((name, domain))
+            self._table.add(fqdn, container_ip)
 
   def _update_ip_of_containers_with_resolve_to_proxy_ip(self, proxy_ip):
     # Updates all IPs of containers containing '--resolve-to-proxy-ip-env'
@@ -360,7 +354,6 @@ def parse_args():
     help='Docker container name running a reverse proxy')
   parser.add_argument('--resolve-to-proxy-ip-env', default=None,
     help='Environment variable inside docker containers to be evaluated')
-  # Added
   parser.add_argument('--additional-dns-names-env', default=None,
     help='Docker container environment variable indicating additional DNS names')
   parser.add_argument('-q', '--quiet', action='store_const', const=1,
