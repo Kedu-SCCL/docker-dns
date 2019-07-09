@@ -1,15 +1,23 @@
-# docker-dns
+# Table of Contents
 
-Automatic container DNS for docker in a single Python file.
+- [Introduction](#introduction)
+- [Usage](#usage)
+- [New features](#new-features)
+  - ["--proxy" parameter](#proxy-parameter)
+  - ["--resolve-to-proxy-ip-env" parameter](#resolve-to-proxy-ip-env-parameter)
+    - [HTTP container](#http-container)
+    - [Gitlab](#gitlab)
+  - ["--additional-dns-names-env" parameter](#additional-dns-names-env-parameter)
+    - [Example of multiple DNS names for a single container](#example-multiple-dns)
+  - ["--proxy-network" parameter](#proxy-network-parameter)
+  - [Credits](#credits)
+  - [License](#license)
 
-Note that docker-dns-rest expands on this, adding a REST API to add and remove domain names dynamically, allowing multiple domain names to be associated with containers, either by name or container ID.  It also includes support for wildcards.
+# Introduction
 
-http://github.com/docker/docker
-http://github.com/phensley/docker-dns-rest
+Docker container that resolves container FQDN to IPs.
 
-This container has been modified to allow some extra features.
-
-# usage
+# Usage
 
 Run some containers:
 
@@ -265,9 +273,21 @@ In this example DNS container will resolve all of following FQDNs to the IP of c
 * nameb.admin.example.com
 * nameb.admin.another.example.com
 
+## "--proxy-network" parameter
+
+Docker network which proxy container is attached to.
+
+It is expected that containers whith '--resolve-to-proxy-ip-env' docker environment variable set up are attached to this network as well.
+
+Example:
+
+```
+ --proxy-network network-proxy
+```
+
 ## Credits
 
-The original code was also modified by docker-dns (https://gitlab.com/jamgo/docker-dns)
+Taken from [docker-dns](https://github.com/phensley/docker-dns/blob/master/dockerdns) and modified to implement some features.
 
 ## License
 

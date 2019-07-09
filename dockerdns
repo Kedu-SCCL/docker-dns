@@ -117,7 +117,7 @@ class DockerMonitor(object):
   'Reads events from Docker and updates the name table'
 
   def __init__(self, client, table, domains, proxy, resolve_to_proxy_ip_env,
-               additional_dns_names):
+               additional_dns_names, proxy_network):
     self._docker = client
     self._table = table
     self._domains = domains
@@ -127,6 +127,7 @@ class DockerMonitor(object):
     # need to update IPs of containers containing '--resolve-to-proxy-ip-env'
     self._proxy_ip = None
     self._additional_dns_names = additional_dns_names
+    self._proxy_network = proxy_network
 
   def run(self):
     # start the event poller, but don't read from the stream yet
@@ -252,13 +253,11 @@ class DockerMonitor(object):
   # Adapted from https://github.com/phensley/docker-dns/blob/master/dockerdns
   def _get_addrs(self, rec):
     networks = get(rec, 'NetworkSettings', 'Networks')
-    #return [ value['IPAddress'] for value in networks.values() ]
-    proxy_network = 'network-proxy'
     try:
-        return(next(i['IPAddress'] for i in networks.values() if i['IPAddress'] == proxy_network))
+        return(next(i['IPAddress'] for i in networks.values() if i['IPAddress']
+                                                       == self._proxy_network))
     except StopIteration:
-      # TODO: see if returning more than one value is an issue.....
-      #return [ value['IPAddress'] for value in networks.values() ]
+      # TODO: I just return one IP per FQDN
       return networks.values()[0]['IPAddress']
 
 class DnsServer(DatagramServer):
@@ -356,6 +355,8 @@ def parse_args():
     help='Environment variable inside docker containers to be evaluated')
   parser.add_argument('--additional-dns-names-env', default=None,
     help='Docker container environment variable indicating additional DNS names')
+  parser.add_argument('--proxy-network', default=None,
+    help='Name of the docker network which is attached proxy container')
   parser.add_argument('-q', '--quiet', action='store_const', const=1,
     help='Quiet mode')
   parser.add_argument('-r', '--record', nargs="*", default=[],
@@ -384,7 +385,7 @@ def main():
   monitor = DockerMonitor(docker.Client(args.docker, version='auto'), table,
                           args.domain, args.proxy,
                           args.resolve_to_proxy_ip_env,
-                          args.additional_dns_names_env)
+                          args.additional_dns_names_env, args.proxy_network)
   dns = DnsServer(args.dns_bind, table, resolver)
   gevent.signal(signal.SIGINT, stop, dns)
   dns.start()
