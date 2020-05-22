@@ -257,8 +257,11 @@ class DockerMonitor(object):
         return(next(i['IPAddress'] for i in networks.values() if i['IPAddress']
                                                        == self._proxy_network))
     except StopIteration:
-      # TODO: I just return one IP per FQDN
-      return networks.values()[0]['IPAddress']
+        # TODO: I just return one IP per FQDN
+        return networks.values()[0]['IPAddress']
+    # Docker host network, no IP
+    except AttributeError:
+        return ''
 
 class DnsServer(DatagramServer):
   '''
